@@ -163,23 +163,23 @@ impl SchemaGen {
     //     !self.schema.discriminator.is_some()
     // }
 
-    // fn discriminator(&self) -> Option<&str> {
-    //     match self.schema.discriminator {
-    //         Some(ref discriminator) => Some(discriminator.as_str()),
-    //         None => None,
-    //     }
-    // }
+    fn discriminator(&self) -> Option<&str> {
+        match self.schema.discriminator {
+            Some(ref discriminator) => Some(discriminator.as_str()),
+            None => None,
+        }
+    }
 
     // fn has_x_ms_discriminator_value(&self) -> bool {
     //     self.schema.x_ms_discriminator_value.is_some()
     // }
 
-    // fn x_ms_discriminator_value(&self) -> Option<&str> {
-    //     match self.schema.x_ms_discriminator_value {
-    //         Some(ref discriminator) => Some(discriminator.as_str()),
-    //         None => None,
-    //     }
-    // }
+    fn x_ms_discriminator_value(&self) -> Option<&str> {
+        match self.schema.x_ms_discriminator_value {
+            Some(ref discriminator) => Some(discriminator.as_str()),
+            None => None,
+        }
+    }
 
     fn array_items(&self) -> Result<&ReferenceOr<Schema>> {
         get_schema_array_items(&self.schema.common)
@@ -535,6 +535,9 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
             //     "WARN schema {} already created from {:?}, duplicate from {:?}",
             //     schema_name, _first_doc_file, doc_file
             // );
+        } else if schema.discriminator().is_some() {
+            // handle discriminator separately as it needs to turn into an enum, maybe we need to wait till the end even?
+            // this should create the enum that we need that points to child structs
         } else if schema.is_array() {
             file.extend(create_vec_alias(schema)?);
         } else if schema.is_local_enum() {
@@ -749,6 +752,28 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
     let struct_name_code = struct_name.to_camel_case_ident()?;
     let required = schema.required();
 
+    let mut discriminator_property_name = schema.discriminator();
+    let x_ms_discriminator_value = schema.x_ms_discriminator_value();
+    // let discriminator_to_serialize =
+    // let discriminator_value = schema.x_ms_discriminator_value();
+
+    if discriminator_property_name.is_some() & x_ms_discriminator_value.is_some() {
+        println!("Struct has discriminator and discriminator value!");
+    }
+
+    if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
+        // what we want to do here is find the discriminator parent, and as we are creating a struct,
+        // we can enforce that it gets serialised with that property without having to add it as a property of this struct
+
+        for all_of_schema in schema.all_of() {
+            if let Some(discriminator_name) = all_of_schema.discriminator() {
+                // all_of_schema.schema.properties.get(key)
+                discriminator_property_name = Some(discriminator_name);
+                break;
+            }
+        }
+    }
+
     // println!("struct: {} {:?}", struct_name_code, pageable);
 
     // for schema in schema.all_of() {
@@ -775,6 +800,12 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
         } else {
             property.name()
         };
+
+        if Some(property_name) == discriminator_property_name {
+            // don't touch this property as we want to serialise using what we've captured
+            continue;
+        }
+
         let field_name = property_name.to_snake_case_ident()?;
         let prop_nm = &PropertyName {
             file_path: schema.doc_file.clone(),
