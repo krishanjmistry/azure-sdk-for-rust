@@ -405,6 +405,7 @@ fn resolve_all_all_of(schemas: &IndexMap<RefKey, SchemaGen>, spec: &Spec) -> Res
     Ok(resolved)
 }
 
+// Flattens/merges the subschemas from allOf references into the parent schema
 fn flatten_all_of(all_schemas: &IndexMap<RefKey, SchemaGen>, schema: &SchemaGen, spec: &Spec) -> Result<SchemaGen> {
     // recursively apply to all properties, so this vec of schemas has all the properties we need from children
     let flattened_schemas: Vec<_> = schema
@@ -428,7 +429,7 @@ fn flatten_all_of(all_schemas: &IndexMap<RefKey, SchemaGen>, schema: &SchemaGen,
     }
 
     // required
-    let mut all_required: HashSet<String> = schema.required.into_iter().collect();
+    let mut all_required: HashSet<String> = schema.required.clone().into_iter().collect();
     for schema in flattened_schemas {
         for required in schema.required {
             all_required.insert(required.into());
