@@ -522,6 +522,10 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
     // println!("response_names: {:?}", pageable_response_names);
 
     let mut schema_names = IndexMap::new();
+
+    let mut discriminator_schemas = IndexMap::new();
+    let mut discriminator_links: Vec<DiscriminatorLinkProperties> = Vec::new();
+
     for (ref_key, schema) in &all_schemas_resolved(&cg.spec)? {
         let doc_file = &ref_key.file_path;
         let schema_name = &ref_key.name;
@@ -536,8 +540,9 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
             //     schema_name, _first_doc_file, doc_file
             // );
         } else if schema.discriminator().is_some() {
-            // handle discriminator separately as it needs to turn into an enum, maybe we need to wait till the end even?
-            // this should create the enum that we need that points to child structs
+            // handle schemas that are discriminators separately as we want to turn these schemas into Enum structs, but we need to know the children of it to do so
+            // is there a case that discriminated classes have a discriminator on themselves - i think this is unlikely
+            discriminator_schemas.insert(ref_key.clone(), schema.clone());
         } else if schema.is_array() {
             file.extend(create_vec_alias(schema)?);
         } else if schema.is_local_enum() {
@@ -548,10 +553,71 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
             file.extend(quote! { pub type #id = #value;});
         } else {
             let pageable_name = format!("{}", schema_name.to_camel_case_ident()?);
-            file.extend(create_struct(cg, schema, schema_name, pageable_response_names.get(&pageable_name))?);
+            let (code, discriminator_link_properties) =
+                create_struct(cg, schema, schema_name, pageable_response_names.get(&pageable_name))?;
+            if let Some(discriminator_link_properties) = discriminator_link_properties {
+                discriminator_links.push(discriminator_link_properties);
+            }
+
+            file.extend(code);
         }
     }
+
+    for (ref_key, schema) in discriminator_schemas {
+        let schema_name = &ref_key.name;
+
+        file.extend(create_discriminator_enum(schema_name, schema, &discriminator_links));
+    }
+
     Ok(file)
+}
+
+fn create_discriminator_enum(
+    schema_name: &String,
+    schema: SchemaGen,
+    discriminator_links: &Vec<DiscriminatorLinkProperties>,
+) -> Result<TokenStream> {
+    let schema_name = schema_name.to_camel_case_ident()?;
+    let mut code = TokenStream::new();
+    let discriminator_property = schema
+        .discriminator()
+        .expect("Only schemas with discriminators should be passed to this function");
+
+    // let enum_values_found = HashSet::new();
+    let mut values_to_insert: IndexMap<String, Ident> = IndexMap::new();
+
+    for discriminator_ref in discriminator_links {
+        if discriminator_ref.discriminator == discriminator_property {
+            values_to_insert.insert(
+                discriminator_ref.x_ms_discriminator_value.to_camel_case_id(),
+                discriminator_ref.struct_name_code.clone(),
+            );
+        };
+    }
+
+    let mut values = TokenStream::new();
+    for (value, link) in values_to_insert {
+        let value = value.to_camel_case_ident()?;
+        values.extend(quote!(
+            #value(#link),
+        ))
+    }
+
+    // let
+
+    // discriminator_links
+
+    // values is a list of name, to (value): discriminatorvalue ->
+
+    let enum_token = quote!(
+        enum #schema_name {
+            #values
+        }
+    );
+
+    code.extend(enum_token);
+
+    Ok(code)
 }
 
 fn create_basic_type_alias(property_name: &str, property: &SchemaGen) -> Result<(Ident, TypeNameCode)> {
@@ -742,7 +808,18 @@ fn create_vec_alias(schema: &SchemaGen) -> Result<TokenStream> {
     Ok(quote! { pub type #typ = Vec<#items_typ>; })
 }
 
-fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: Option<&MsPageable>) -> Result<TokenStream> {
+struct DiscriminatorLinkProperties {
+    discriminator: String,
+    x_ms_discriminator_value: String,
+    struct_name_code: Ident,
+}
+
+fn create_struct(
+    cg: &CodeGen,
+    schema: &SchemaGen,
+    struct_name: &str,
+    pageable: Option<&MsPageable>,
+) -> Result<(TokenStream, Option<DiscriminatorLinkProperties>)> {
     let mut code = TokenStream::new();
     let mut mod_code = TokenStream::new();
     let mut props = TokenStream::new();
@@ -754,13 +831,14 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
 
     let mut discriminator_property_name = schema.discriminator();
     let x_ms_discriminator_value = schema.x_ms_discriminator_value();
-    // let discriminator_to_serialize =
-    // let discriminator_value = schema.x_ms_discriminator_value();
+
+    let mut discriminator_link_properties = None;
 
     if discriminator_property_name.is_some() & x_ms_discriminator_value.is_some() {
         println!("Struct has discriminator and discriminator value!");
     }
 
+    // if x_ms_discriminator_value.is_some() {
     if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
         // what we want to do here is find the discriminator parent, and as we are creating a struct,
         // we can enforce that it gets serialised with that property without having to add it as a property of this struct
@@ -769,6 +847,11 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
             if let Some(discriminator_name) = all_of_schema.discriminator() {
                 // all_of_schema.schema.properties.get(key)
                 discriminator_property_name = Some(discriminator_name);
+                discriminator_link_properties = Some(DiscriminatorLinkProperties {
+                    discriminator: String::from(discriminator_name),
+                    x_ms_discriminator_value: String::from(x_ms_discriminator_value),
+                    struct_name_code: struct_name_code.clone(),
+                });
                 break;
             }
         }
@@ -1016,7 +1099,7 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
         });
     }
 
-    Ok(code)
+    Ok((code, discriminator_link_properties))
 }
 
 struct StructFieldCode {
@@ -1089,7 +1172,7 @@ fn create_struct_field_code(
             } else if property.is_local_struct() {
                 let id = property_name.to_camel_case_ident()?;
                 let type_name = TypeNameCode::from(vec![namespace.clone(), id]);
-                let code = create_struct(cg, property, property_name, None)?;
+                let (code, _) = create_struct(cg, property, property_name, None)?;
                 Ok(StructFieldCode {
                     type_name,
                     code: Some(TypeCode::Struct(code)),
