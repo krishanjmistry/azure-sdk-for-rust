@@ -45,6 +45,7 @@ pub struct SchemaGen {
     // resolved
     properties: Vec<PropertyGen>,
     all_of: Vec<SchemaGen>,
+    required: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -65,12 +66,16 @@ impl EnumValue {
 
 impl SchemaGen {
     fn new(ref_key: Option<RefKey>, schema: Schema, doc_file: Utf8PathBuf) -> Self {
+        let schema = schema.clone();
+        let required = schema.required.clone();
+
         Self {
             ref_key,
             schema,
             doc_file,
             properties: Vec::new(),
             all_of: Vec::new(),
+            required: required,
         }
     }
 
@@ -141,16 +146,40 @@ impl SchemaGen {
     }
 
     fn required(&self) -> HashSet<&str> {
-        self.schema.required.iter().map(String::as_str).collect()
+        // self.schema.required.iter().map(String::as_str).collect()
+        self.required.iter().map(String::as_str).collect()
     }
 
     fn has_required(&self) -> bool {
-        !self.schema.required.is_empty()
+        !self.required.is_empty()
+        // !self.schema.required.is_empty()
     }
 
     fn all_of(&self) -> Vec<&SchemaGen> {
         self.all_of.iter().collect()
     }
+
+    // fn has_discriminator(&self) -> bool {
+    //     !self.schema.discriminator.is_some()
+    // }
+
+    // fn discriminator(&self) -> Option<&str> {
+    //     match self.schema.discriminator {
+    //         Some(ref discriminator) => Some(discriminator.as_str()),
+    //         None => None,
+    //     }
+    // }
+
+    // fn has_x_ms_discriminator_value(&self) -> bool {
+    //     self.schema.x_ms_discriminator_value.is_some()
+    // }
+
+    // fn x_ms_discriminator_value(&self) -> Option<&str> {
+    //     match self.schema.x_ms_discriminator_value {
+    //         Some(ref discriminator) => Some(discriminator.as_str()),
+    //         None => None,
+    //     }
+    // }
 
     fn array_items(&self) -> Result<&ReferenceOr<Schema>> {
         get_schema_array_items(&self.schema.common)
@@ -192,6 +221,46 @@ impl SchemaGen {
         true
     }
 }
+
+// function handleDiscriminator(context: SdkContext, type: Model, model: Record<string, any>) {
+//     const discriminator = getDiscriminator(context.program, type);
+//     if (discriminator) {
+//         let discriminatorProperty;
+//         for (const childModel of type.derivedModels) {
+//             const modelType = getType(context, childModel);
+//             for (const property of modelType.properties) {
+//                 if (property.wireName === discriminator.propertyName) {
+//                     modelType.discriminatorValue = property.type.value;
+//                     property.isDiscriminator = true;
+//                     model.discriminatedSubtypes[property.type.value] = modelType;
+//                     discriminatorProperty = property;
+//                 }
+//             }
+//         }
+//         // it is not included in properties of cadl but needed by python codegen
+//         if (discriminatorProperty) {
+//             const discriminatorType = { ...discriminatorProperty.type };
+//             discriminatorType.value = null;
+//             const propertyCopy = {
+//                 ...discriminatorProperty,
+//                 isPolymorphic: true,
+//                 type: discriminatorType,
+//             };
+//             propertyCopy.description = "";
+//             model.properties.push(propertyCopy);
+//         }
+//     }
+// }
+
+// write some code that will create an enum struct for a definition which has a discriminator
+// the discriminator property should be represented on the struct as a tagged enum, where the tag
+// is the discriminator property, and the values are the descendants of the definition based on the x-ms-discriminator-value
+
+// in most cases, I think it's roughly along the lines of when we get an Enum, we need to check if that property is the discriminator,
+// and if so, we need to create a tagged enum for it
+// In this case, we need to set
+
+// https://github.com/Azure/autorest.csharp/blob/509bb4e02d76df6eee3f39c9fceead9292c8c76c/src/TypeSpec.Extension/Emitter.Csharp/src/lib/clientModelBuilder.ts#L524
 
 fn resolve_schema_properties(
     resolved: &mut IndexMap<RefKey, SchemaGen>,
@@ -336,6 +405,52 @@ fn resolve_all_all_of(schemas: &IndexMap<RefKey, SchemaGen>, spec: &Spec) -> Res
     Ok(resolved)
 }
 
+fn flatten_all_of(all_schemas: &IndexMap<RefKey, SchemaGen>, schema: &SchemaGen, spec: &Spec) -> Result<SchemaGen> {
+    // recursively apply to all properties, so this vec of schemas has all the properties we need from children
+    let flattened_schemas: Vec<_> = schema
+        .all_of
+        .iter()
+        .map(|schema| flatten_all_of(all_schemas, schema, spec))
+        .collect::<Result<_>>()?;
+
+    // we need to flatten things that need to be present in this flattened schema
+
+    // properties
+    let mut all_properties: IndexMap<_, _> = IndexMap::new();
+    for property in schema.properties.clone() {
+        all_properties.insert(property.name.clone(), property);
+    }
+
+    for schema in flattened_schemas.clone() {
+        for property in schema.properties {
+            all_properties.insert(property.name.clone(), property);
+        }
+    }
+
+    // required
+    let mut all_required: HashSet<String> = schema.required.into_iter().collect();
+    for schema in flattened_schemas {
+        for required in schema.required {
+            all_required.insert(required.into());
+        }
+    }
+
+    let mut schema: SchemaGen = schema.clone();
+    schema.properties = all_properties.into_iter().map(|(_, property)| property).collect();
+    schema.required = all_required.clone().into_iter().collect();
+    Ok(schema)
+}
+
+fn flatten_all_all_of(schemas: &IndexMap<RefKey, SchemaGen>, spec: &Spec) -> Result<IndexMap<RefKey, SchemaGen>> {
+    let mut flattened: IndexMap<RefKey, SchemaGen> = IndexMap::new();
+    for (ref_key, schema) in schemas {
+        flattened.insert(ref_key.clone(), schema.clone()); // order properties after
+        let schema = flatten_all_of(schemas, schema, spec)?;
+        flattened.insert(ref_key.clone(), schema);
+    }
+    Ok(flattened)
+}
+
 fn add_schema_gen(all_schemas: &mut IndexMap<RefKey, SchemaGen>, resolved_schema: ResolvedSchema) {
     if let Some(ref_key) = resolved_schema.ref_key {
         if !all_schemas.contains_key(&ref_key) {
@@ -351,6 +466,7 @@ pub fn all_schemas_resolved(spec: &Spec) -> Result<Vec<(RefKey, SchemaGen)>> {
     let schemas = all_schemas(spec)?;
     let schemas = resolve_all_schema_properties(&schemas, spec)?;
     let schemas = resolve_all_all_of(&schemas, spec)?;
+    let schemas = flatten_all_all_of(&schemas, spec)?;
     // sort schemas by name
     let mut schemas: Vec<_> = schemas.into_iter().collect();
     schemas.sort_by(|a, b| a.0.name.cmp(&b.0.name));
@@ -634,21 +750,21 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
 
     // println!("struct: {} {:?}", struct_name_code, pageable);
 
-    for schema in schema.all_of() {
-        let schema_name = schema.name()?;
-        let type_name = schema_name.to_camel_case_ident()?;
-        let field_name = schema_name.to_snake_case_ident()?;
-        props.extend(quote! {
-            #[serde(flatten)]
-            pub #field_name: #type_name,
-        });
-        if schema.implement_default() {
-            new_fn_body.extend(quote! { #field_name: #type_name::default(), });
-        } else {
-            new_fn_params.push(quote! { #field_name: #type_name });
-            new_fn_body.extend(quote! { #field_name, });
-        }
-    }
+    // for schema in schema.all_of() {
+    //     let schema_name = schema.name()?;
+    //     let type_name = schema_name.to_camel_case_ident()?;
+    //     let field_name = schema_name.to_snake_case_ident()?;
+    //     props.extend(quote! {
+    //         #[serde(flatten)]
+    //         pub #field_name: #type_name,
+    //     });
+    //     if schema.implement_default() {
+    //         new_fn_body.extend(quote! { #field_name: #type_name::default(), });
+    //     } else {
+    //         new_fn_params.push(quote! { #field_name: #type_name });
+    //         new_fn_body.extend(quote! { #field_name, });
+    //     }
+    // }
 
     let mut field_names = HashMap::new();
 
