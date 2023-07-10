@@ -12,10 +12,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 use serde_json::Value;
 use spec::{get_schema_schema_references, openapi, RefKey};
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Deref,
-};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 pub struct PropertyGen {
@@ -591,7 +588,7 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
         } else if schema.discriminator().is_some() {
             // TODO: WIP
             if schema.discriminator_subtypes().is_empty() {
-                panic!("discriminator {schema_name} has no subtypes!");
+                panic!("discriminator {} has no subtypes!", schema_name);
             } else {
                 file.extend(create_discriminator_enum(schema_name, schema));
             }
@@ -860,12 +857,18 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
 
     if x_ms_discriminator_value.is_some() {
         println!("Struct has discriminator value - we should skip adding that property!");
+        for all_of_schema in schema.all_of() {
+            println!("{}", all_of_schema.name()?);
+            if let Some(discriminator_name) = all_of_schema.discriminator() {
+                discriminator_property_name = Some(discriminator_name);
+            }
+        }
     }
 
     // if x_ms_discriminator_value.is_some() {
-    if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
-        // We want to skip this property in the struct, because it should get serialised automatically with this value
-    }
+    // if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
+    // We want to skip this property in the struct, because it should get serialised automatically with this value
+    // }
 
     // println!("struct: {} {:?}", struct_name_code, pageable);
 
@@ -894,8 +897,9 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
             property.name()
         };
 
-        if Some(property_name) == discriminator_property_name {
-            // don't touch this property as we want to serialise using what we've captured
+        if x_ms_discriminator_value.is_some() && Some(property_name) == discriminator_property_name {
+            // TODO: don't touch this property as we want to serialise using what we've captured
+            println!("Struct has discriminator value and this is the discriminator property: '{property_name}' - we should skip!");
             continue;
         }
 
