@@ -12,7 +12,10 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 use serde_json::Value;
 use spec::{get_schema_schema_references, openapi, RefKey};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+};
 
 #[derive(Clone)]
 pub struct PropertyGen {
@@ -46,6 +49,7 @@ pub struct SchemaGen {
     properties: Vec<PropertyGen>,
     all_of: Vec<SchemaGen>,
     required: Vec<String>,
+    discriminator_subtypes: Vec<DiscriminatorLinkProperties>,
 }
 
 #[derive(Clone)]
@@ -76,6 +80,7 @@ impl SchemaGen {
             properties: Vec::new(),
             all_of: Vec::new(),
             required: required,
+            discriminator_subtypes: Vec::new(),
         }
     }
 
@@ -168,6 +173,10 @@ impl SchemaGen {
             Some(ref discriminator) => Some(discriminator.as_str()),
             None => None,
         }
+    }
+
+    fn discriminator_subtypes(&self) -> Vec<DiscriminatorLinkProperties> {
+        self.discriminator_subtypes.clone()
     }
 
     // fn has_x_ms_discriminator_value(&self) -> bool {
@@ -452,6 +461,48 @@ fn flatten_all_all_of(schemas: &IndexMap<RefKey, SchemaGen>, spec: &Spec) -> Res
     Ok(flattened)
 }
 
+fn resolve_discriminators(schemas: &IndexMap<RefKey, SchemaGen>, spec: &Spec) -> Result<IndexMap<RefKey, SchemaGen>> {
+    let mut resolved: IndexMap<RefKey, SchemaGen> = schemas.clone();
+    for (ref_key, schema) in schemas {
+        // Only do something if it has a discriminator value
+        if let Some(x_ms_discriminator_value) = schema.x_ms_discriminator_value() {
+            // what we want to do here is find the discriminator parent, and as we are creating a struct,
+            // we can enforce that it gets serialised with that property without having to add it as a property of this struct
+            // if the parent discriminator uses an enum, we check that it is one of those properties
+
+            // If it does, we want to find the parent struct so we can add the discriminator property to it
+            for all_of_schema in schema.all_of() {
+                println!("{}", all_of_schema.name()?);
+                if let Some(discriminator_name) = all_of_schema.discriminator() {
+                    // This is the parent struct, so we want to add this to the discriminator_subtypes
+                    println!("Found discriminator property {} in {}", discriminator_name, all_of_schema.name()?);
+
+                    let discriminator_link_properties = DiscriminatorLinkProperties {
+                        x_ms_discriminator_value: String::from(x_ms_discriminator_value),
+                        ref_key: ref_key.clone(),
+                        schema: schema.clone(),
+                    };
+
+                    let parent_discriminator_ref_key = all_of_schema.ref_key.clone();
+                    resolved
+                        .entry(parent_discriminator_ref_key.expect("We should have a ref key here"))
+                        .and_modify(|parent_discriminator_schema| {
+                            // let discriminator_subtypes = parent_discriminator_schema.discriminator_subtypes.clone();
+                            parent_discriminator_schema
+                                .discriminator_subtypes
+                                .push(discriminator_link_properties.clone());
+                        });
+                    // Add a link to the parent class via the DiscriminatorLinkProperties
+                    // all_of_schema.discriminator_subtypes.push(discriminator_link_properties);
+                    // TODO: do we need a break here?
+                    // break;
+                }
+            }
+        }
+    }
+    Ok(resolved)
+}
+
 fn add_schema_gen(all_schemas: &mut IndexMap<RefKey, SchemaGen>, resolved_schema: ResolvedSchema) {
     if let Some(ref_key) = resolved_schema.ref_key {
         if !all_schemas.contains_key(&ref_key) {
@@ -468,6 +519,7 @@ pub fn all_schemas_resolved(spec: &Spec) -> Result<Vec<(RefKey, SchemaGen)>> {
     let schemas = resolve_all_schema_properties(&schemas, spec)?;
     let schemas = resolve_all_all_of(&schemas, spec)?;
     let schemas = flatten_all_all_of(&schemas, spec)?;
+    let schemas = resolve_discriminators(&schemas, spec)?;
     // sort schemas by name
     let mut schemas: Vec<_> = schemas.into_iter().collect();
     schemas.sort_by(|a, b| a.0.name.cmp(&b.0.name));
@@ -523,9 +575,6 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
 
     let mut schema_names = IndexMap::new();
 
-    let mut discriminator_schemas = IndexMap::new();
-    let mut discriminator_links: Vec<DiscriminatorLinkProperties> = Vec::new();
-
     for (ref_key, schema) in &all_schemas_resolved(&cg.spec)? {
         let doc_file = &ref_key.file_path;
         let schema_name = &ref_key.name;
@@ -540,9 +589,12 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
             //     schema_name, _first_doc_file, doc_file
             // );
         } else if schema.discriminator().is_some() {
-            // handle schemas that are discriminators separately as we want to turn these schemas into Enum structs, but we need to know the children of it to do so
-            // is there a case that discriminated classes have a discriminator on themselves - i think this is unlikely
-            discriminator_schemas.insert(ref_key.clone(), schema.clone());
+            // TODO: WIP
+            if schema.discriminator_subtypes().is_empty() {
+                panic!("discriminator {schema_name} has no subtypes!");
+            } else {
+                file.extend(create_discriminator_enum(schema_name, schema));
+            }
         } else if schema.is_array() {
             file.extend(create_vec_alias(schema)?);
         } else if schema.is_local_enum() {
@@ -553,66 +605,43 @@ pub fn create_models(cg: &CodeGen) -> Result<TokenStream> {
             file.extend(quote! { pub type #id = #value;});
         } else {
             let pageable_name = format!("{}", schema_name.to_camel_case_ident()?);
-            let (code, discriminator_link_properties) =
-                create_struct(cg, schema, schema_name, pageable_response_names.get(&pageable_name))?;
-            if let Some(discriminator_link_properties) = discriminator_link_properties {
-                discriminator_links.push(discriminator_link_properties);
-            }
-
-            file.extend(code);
+            file.extend(create_struct(cg, schema, schema_name, pageable_response_names.get(&pageable_name))?);
         }
-    }
-
-    for (ref_key, schema) in discriminator_schemas {
-        let schema_name = &ref_key.name;
-
-        file.extend(create_discriminator_enum(schema_name, schema, &discriminator_links));
     }
 
     Ok(file)
 }
 
-fn create_discriminator_enum(
-    schema_name: &String,
-    schema: SchemaGen,
-    discriminator_links: &Vec<DiscriminatorLinkProperties>,
-) -> Result<TokenStream> {
-    let schema_name = schema_name.to_camel_case_ident()?;
+fn create_discriminator_enum(schema_name: &String, schema: &SchemaGen) -> Result<TokenStream> {
     let mut code = TokenStream::new();
     let discriminator_property = schema
         .discriminator()
         .expect("Only schemas with discriminators should be passed to this function");
-
-    // let enum_values_found = HashSet::new();
-    let mut values_to_insert: IndexMap<String, Ident> = IndexMap::new();
-
-    for discriminator_ref in discriminator_links {
-        if discriminator_ref.discriminator == discriminator_property {
-            values_to_insert.insert(
-                discriminator_ref.x_ms_discriminator_value.to_camel_case_id(),
-                discriminator_ref.struct_name_code.clone(),
-            );
-        };
-    }
+    let discriminator_links = schema.discriminator_subtypes();
 
     let mut values = TokenStream::new();
-    for (value, link) in values_to_insert {
-        let value = value.to_camel_case_ident()?;
+    for discriminator_link in discriminator_links {
+        println!(
+            "{} {:?}",
+            discriminator_link.x_ms_discriminator_value, discriminator_link.schema.ref_key
+        );
+
+        let x_ms_discriminator_value = discriminator_link.x_ms_discriminator_value.clone();
+        let enum_discriminator_name = discriminator_link.x_ms_discriminator_value.to_camel_case_ident()?;
+        let struct_name_code = discriminator_link.ref_key.name.to_camel_case_ident()?;
         values.extend(quote!(
-            #value(#link),
+            #[serde(rename = #x_ms_discriminator_value)]
+            #enum_discriminator_name(#struct_name_code),
         ))
     }
 
-    // let
-
-    // discriminator_links
-
-    // values is a list of name, to (value): discriminatorvalue ->
-
+    let schema_name = schema_name.to_camel_case_ident()?;
     let enum_token = quote!(
-        enum #schema_name {
-            #values
-        }
+                #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+                # [ serde(tag=#discriminator_property)]
+                pub enum #schema_name {
+                    #values
+                }
     );
 
     code.extend(enum_token);
@@ -808,18 +837,14 @@ fn create_vec_alias(schema: &SchemaGen) -> Result<TokenStream> {
     Ok(quote! { pub type #typ = Vec<#items_typ>; })
 }
 
+#[derive(Clone)]
 struct DiscriminatorLinkProperties {
-    discriminator: String,
     x_ms_discriminator_value: String,
-    struct_name_code: Ident,
+    ref_key: RefKey,
+    schema: SchemaGen,
 }
 
-fn create_struct(
-    cg: &CodeGen,
-    schema: &SchemaGen,
-    struct_name: &str,
-    pageable: Option<&MsPageable>,
-) -> Result<(TokenStream, Option<DiscriminatorLinkProperties>)> {
+fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: Option<&MsPageable>) -> Result<TokenStream> {
     let mut code = TokenStream::new();
     let mut mod_code = TokenStream::new();
     let mut props = TokenStream::new();
@@ -828,33 +853,18 @@ fn create_struct(
     let ns = struct_name.to_snake_case_ident()?;
     let struct_name_code = struct_name.to_camel_case_ident()?;
     let required = schema.required();
+    println!("Creating struct for {} as {}", struct_name, struct_name_code);
 
     let mut discriminator_property_name = schema.discriminator();
     let x_ms_discriminator_value = schema.x_ms_discriminator_value();
 
-    let mut discriminator_link_properties = None;
-
-    if discriminator_property_name.is_some() & x_ms_discriminator_value.is_some() {
-        println!("Struct has discriminator and discriminator value!");
+    if x_ms_discriminator_value.is_some() {
+        println!("Struct has discriminator value - we should skip adding that property!");
     }
 
     // if x_ms_discriminator_value.is_some() {
     if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
-        // what we want to do here is find the discriminator parent, and as we are creating a struct,
-        // we can enforce that it gets serialised with that property without having to add it as a property of this struct
-
-        for all_of_schema in schema.all_of() {
-            if let Some(discriminator_name) = all_of_schema.discriminator() {
-                // all_of_schema.schema.properties.get(key)
-                discriminator_property_name = Some(discriminator_name);
-                discriminator_link_properties = Some(DiscriminatorLinkProperties {
-                    discriminator: String::from(discriminator_name),
-                    x_ms_discriminator_value: String::from(x_ms_discriminator_value),
-                    struct_name_code: struct_name_code.clone(),
-                });
-                break;
-            }
-        }
+        // We want to skip this property in the struct, because it should get serialised automatically with this value
     }
 
     // println!("struct: {} {:?}", struct_name_code, pageable);
@@ -1099,7 +1109,7 @@ fn create_struct(
         });
     }
 
-    Ok((code, discriminator_link_properties))
+    Ok(code)
 }
 
 struct StructFieldCode {
@@ -1172,7 +1182,7 @@ fn create_struct_field_code(
             } else if property.is_local_struct() {
                 let id = property_name.to_camel_case_ident()?;
                 let type_name = TypeNameCode::from(vec![namespace.clone(), id]);
-                let (code, _) = create_struct(cg, property, property_name, None)?;
+                let code = create_struct(cg, property, property_name, None)?;
                 Ok(StructFieldCode {
                     type_name,
                     code: Some(TypeCode::Struct(code)),
