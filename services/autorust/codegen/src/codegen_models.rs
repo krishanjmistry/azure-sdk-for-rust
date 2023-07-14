@@ -228,46 +228,6 @@ impl SchemaGen {
     }
 }
 
-// function handleDiscriminator(context: SdkContext, type: Model, model: Record<string, any>) {
-//     const discriminator = getDiscriminator(context.program, type);
-//     if (discriminator) {
-//         let discriminatorProperty;
-//         for (const childModel of type.derivedModels) {
-//             const modelType = getType(context, childModel);
-//             for (const property of modelType.properties) {
-//                 if (property.wireName === discriminator.propertyName) {
-//                     modelType.discriminatorValue = property.type.value;
-//                     property.isDiscriminator = true;
-//                     model.discriminatedSubtypes[property.type.value] = modelType;
-//                     discriminatorProperty = property;
-//                 }
-//             }
-//         }
-//         // it is not included in properties of cadl but needed by python codegen
-//         if (discriminatorProperty) {
-//             const discriminatorType = { ...discriminatorProperty.type };
-//             discriminatorType.value = null;
-//             const propertyCopy = {
-//                 ...discriminatorProperty,
-//                 isPolymorphic: true,
-//                 type: discriminatorType,
-//             };
-//             propertyCopy.description = "";
-//             model.properties.push(propertyCopy);
-//         }
-//     }
-// }
-
-// write some code that will create an enum struct for a definition which has a discriminator
-// the discriminator property should be represented on the struct as a tagged enum, where the tag
-// is the discriminator property, and the values are the descendants of the definition based on the x-ms-discriminator-value
-
-// in most cases, I think it's roughly along the lines of when we get an Enum, we need to check if that property is the discriminator,
-// and if so, we need to create a tagged enum for it
-// In this case, we need to set
-
-// https://github.com/Azure/autorest.csharp/blob/509bb4e02d76df6eee3f39c9fceead9292c8c76c/src/TypeSpec.Extension/Emitter.Csharp/src/lib/clientModelBuilder.ts#L524
-
 fn resolve_schema_properties(
     resolved: &mut IndexMap<RefKey, SchemaGen>,
     all_schemas: &IndexMap<RefKey, SchemaGen>,
@@ -864,11 +824,6 @@ fn create_struct(cg: &CodeGen, schema: &SchemaGen, struct_name: &str, pageable: 
             }
         }
     }
-
-    // if x_ms_discriminator_value.is_some() {
-    // if let Some(x_ms_discriminator_value) = x_ms_discriminator_value {
-    // We want to skip this property in the struct, because it should get serialised automatically with this value
-    // }
 
     // println!("struct: {} {:?}", struct_name_code, pageable);
 
