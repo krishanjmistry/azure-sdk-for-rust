@@ -586,14 +586,26 @@ fn create_discriminator_enum(schema_name: &String, schema: &SchemaGen) -> Result
         let x_ms_discriminator_value = discriminator_link.x_ms_discriminator_value.clone();
         let enum_discriminator_name = discriminator_link.x_ms_discriminator_value.to_camel_case_ident()?;
         let struct_name_code = discriminator_link.ref_key.name.to_camel_case_ident()?;
+        let doc_comment_for_discriminator = format!(
+            "\"{}\" where the \"{}\" is \"{}\"",
+            schema_name, discriminator_property, x_ms_discriminator_value
+        );
+        let doc_comment = quote! { #[doc = #doc_comment_for_discriminator]};
         values.extend(quote!(
+            #doc_comment
             #[serde(rename = #x_ms_discriminator_value)]
             #enum_discriminator_name(#struct_name_code),
         ))
     }
 
+    let doc_comment = match &schema.schema.common.description {
+        Some(description) => quote! { #[doc = #description] },
+        None => quote! {},
+    };
+
     let schema_name = schema_name.to_camel_case_ident()?;
-    let enum_token = quote!(
+    let enum_code = quote!(
+                #doc_comment
                 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
                 # [ serde(tag=#discriminator_property)]
                 pub enum #schema_name {
@@ -601,7 +613,7 @@ fn create_discriminator_enum(schema_name: &String, schema: &SchemaGen) -> Result
                 }
     );
 
-    code.extend(enum_token);
+    code.extend(enum_code);
 
     Ok(code)
 }
