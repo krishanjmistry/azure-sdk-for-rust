@@ -18,7 +18,6 @@ pub struct PrepareRequestCode {
 
 impl PrepareRequestCode {
     pub fn new(operation: &WebOperationGen, parameters: &FunctionParams, consumes: String) -> Self {
-        // let is_post = operation.0.verb == WebVerb::Post;
         Self {
             has_param_api_version: parameters.has_api_version(),
             has_param_x_ms_version: parameters.has_x_ms_version(),
@@ -47,21 +46,19 @@ impl ToTokens for PrepareRequestCode {
             content_type: self.consumes.clone(),
             params: self.parameters.clone(),
         };
-        // tokens.extend(build_request_params.into_token_stream());
 
+        // Handle cases where there is no body parameter
         let body_tokens = if !self.has_body_parameter {
-            quote! {
+            let mut tokens = quote! {
                 let req_body = azure_core::EMPTY_BODY;
+            };
+            // If it is a post and there is no body, additionally set the Content-Length to 0
+            if self.verb == WebVerb::Post {
+                tokens.extend(quote! {
+                    req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                });
             }
-        } else {
-            quote! {}
-        };
-
-        // if it is a post and there is no body, set the Content-Length to 0
-        let content_length_token = if self.verb == WebVerb::Post && !self.has_body_parameter {
-            quote! {
-                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-            }
+            tokens
         } else {
             quote! {}
         };
@@ -74,7 +71,6 @@ impl ToTokens for PrepareRequestCode {
                 #build_request_params
                 #body_tokens
                 #api_version
-                #content_length_token
                 req.set_body(req_body);
                 Ok(req)
             }
