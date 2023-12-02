@@ -29,13 +29,13 @@ impl ToTokens for SetRequestParamsCode {
                             CollectionFormat::Multi => Some(
                                 if param.is_string(){
                                     quote! {
-                                        for value in &this.#param_name_var {
+                                        for value in &self.#param_name_var {
                                             req.url_mut().query_pairs_mut().append_pair(#param_name, value);
                                         }
                                     }
                                 } else {
                                     quote! {
-                                        for value in &this.#param_name_var {
+                                        for value in &self.#param_name_var {
                                             req.url_mut().query_pairs_mut().append_pair(#param_name, &value.to_string());
                                         }
                                     }
@@ -60,12 +60,12 @@ impl ToTokens for SetRequestParamsCode {
                     if let Some(query_body) = query_body {
                         if !param.is_optional() || is_vec {
                             tokens.extend(quote! {
-                                let #param_name_var = &this.#param_name_var;
+                                let #param_name_var = &self.#param_name_var;
                                 #query_body
                             });
                         } else {
                             tokens.extend(quote! {
-                                if let Some(#param_name_var) = &this.#param_name_var {
+                                if let Some(#param_name_var) = &self.#param_name_var {
                                     #query_body
                                 }
                             });
@@ -78,22 +78,22 @@ impl ToTokens for SetRequestParamsCode {
                     if !param.is_optional() || is_vec {
                         if param.is_string() {
                             tokens.extend(quote! {
-                                req.insert_header(#header_name, &this.#param_name_var);
+                                req.insert_header(#header_name, &self.#param_name_var);
                             });
                         } else {
                             tokens.extend(quote! {
-                                req.insert_header(#header_name, &this.#param_name_var.to_string());
+                                req.insert_header(#header_name, &self.#param_name_var.to_string());
                             });
                         }
                     } else if param.is_string() {
                         tokens.extend(quote! {
-                            if let Some(#param_name_var) = &this.#param_name_var {
+                            if let Some(#param_name_var) = &self.#param_name_var {
                                 req.insert_header(#header_name, #param_name_var);
                             }
                         });
                     } else {
                         tokens.extend(quote! {
-                            if let Some(#param_name_var) = &this.#param_name_var {
+                            if let Some(#param_name_var) = &self.#param_name_var {
                                 req.insert_header(#header_name, &#param_name_var.to_string());
                             }
                         });
@@ -112,12 +112,12 @@ impl ToTokens for SetRequestParamsCode {
                     if !param.is_optional() || is_vec {
                         tokens.extend(quote! {
                             #set_content_type
-                            let req_body = azure_core::to_json(&this.#param_name_var)?;
+                            let req_body = azure_core::to_json(&self.#param_name_var)?;
                         });
                     } else {
                         tokens.extend(quote! {
                             let req_body =
-                                if let Some(#param_name_var) = &this.#param_name_var {
+                                if let Some(#param_name_var) = &self.#param_name_var {
                                     #set_content_type
                                     azure_core::to_json(#param_name_var)?
                                 } else {

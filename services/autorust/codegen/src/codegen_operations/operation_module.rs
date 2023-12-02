@@ -2,12 +2,14 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 
 use super::{
-    request_builder_into_future::RequestBuilderIntoFutureCode, request_builder_send::RequestBuilderSendCode,
-    request_builder_setter::RequestBuilderSettersCode, request_builder_struct::RequestBuilderStructCode, response_code::ResponseCode,
+    prepare_request_code::PrepareRequestCode, request_builder_into_future::RequestBuilderIntoFutureCode,
+    request_builder_send::RequestBuilderSendCode, request_builder_setter::RequestBuilderSettersCode,
+    request_builder_struct::RequestBuilderStructCode, response_code::ResponseCode,
 };
 pub struct OperationModuleCode {
     pub module_name: Ident,
     pub response_code: ResponseCode,
+    pub prepare_request_code: PrepareRequestCode,
     pub request_builder_struct_code: RequestBuilderStructCode,
     pub request_builder_setters_code: RequestBuilderSettersCode,
     pub request_builder_send_code: RequestBuilderSendCode,
@@ -18,6 +20,7 @@ impl ToTokens for OperationModuleCode {
         let Self {
             module_name,
             response_code,
+            prepare_request_code,
             request_builder_struct_code,
             request_builder_setters_code,
             request_builder_send_code,
@@ -37,6 +40,7 @@ impl ToTokens for OperationModuleCode {
 
                 impl RequestBuilder {
                     #request_builder_setters_code
+                    #prepare_request_code
                     #request_builder_send_code
                 }
 
