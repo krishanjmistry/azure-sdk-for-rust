@@ -6,22 +6,28 @@ use crate::codegen::PARAM_RE;
 use crate::Result;
 use crate::{codegen::parse_path_params, identifier::SnakeCaseIdent};
 
-use super::{new_request_code::NewRequestCode, response_code::ResponseCode, set_request_code::SetRequestCode};
+use super::{
+    prepare_request_code::PrepareRequestCode,
+    // new_request_code::NewRequestCode,
+    response_code::ResponseCode,
+};
 /// The `send` function of the request builder.
 pub struct RequestBuilderSendCode {
-    new_request_code: NewRequestCode,
-    request_builder: SetRequestCode,
+    // new_request_code: NewRequestCode,
+    path_params: String,
+    request_builder: PrepareRequestCode,
     response_code: ResponseCode,
     url_args: Vec<Ident>,
 }
 
 impl RequestBuilderSendCode {
-    pub fn new(new_request_code: NewRequestCode, request_builder: SetRequestCode, response_code: ResponseCode) -> Result<Self> {
-        let params = parse_path_params(&new_request_code.path);
+    pub fn new(path_params: String, request_builder: PrepareRequestCode, response_code: ResponseCode) -> Result<Self> {
+        // pub fn new(new_request_code: NewRequestCode, request_builder: PrepareRequestCode, response_code: ResponseCode) -> Result<Self> {
+        let params = parse_path_params(&path_params);
         let url_args: Result<Vec<_>> = params.iter().map(|s| s.to_snake_case_ident()).collect();
         let url_args = url_args?;
         Ok(Self {
-            new_request_code,
+            path_params,
             request_builder,
             response_code,
             url_args,
@@ -31,7 +37,7 @@ impl RequestBuilderSendCode {
 
 impl ToTokens for RequestBuilderSendCode {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let new_request_code = &self.new_request_code;
+        // let new_request_code = &self.new_request_code;
         let request_builder = &self.request_builder;
 
         let url_args = self.url_args.iter().map(|url_arg| {
@@ -39,7 +45,7 @@ impl ToTokens for RequestBuilderSendCode {
         });
         let url_str_args = quote! { #(#url_args),* };
 
-        let fpath = format!("{{}}{}", &format_path(&new_request_code.path));
+        let fpath = format!("{{}}{}", &format_path(&self.path_params));
 
         let mut match_status = TokenStream::new();
         for status_response in &self.response_code.status_responses {
@@ -85,10 +91,11 @@ impl ToTokens for RequestBuilderSendCode {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        #new_request_code
-                        #request_builder
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
+                        // let url = this.url()?;
+                        // #new_request_code
+                        // #request_builder
+                        // req.set_body(req_body);
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -132,13 +139,14 @@ impl ToTokens for RequestBuilderSendCode {
                             let make_request = move |continuation: Option<String>| {
                                 let this = self.clone();
                                 async move {
-                                    let mut url = this.url()?;
-                                    #new_request_code
-                                    #request_builder
+                                    let mut req = this.prepare_request()?;
+                                    // let mut url = this.url()?;
+                                    // #new_request_code
+                                    // #request_builder
                                     if let Some(value) = continuation.as_ref() {
                                         req.url_mut().query_pairs_mut().append_pair(#continuable_param, value);
                                     }
-                                    req.set_body(req_body);
+                                    // req.set_body(req_body);
                                     let rsp = this.client.send(&mut req).await?;
                                     let rsp =
                                         match rsp.status() {
@@ -157,25 +165,30 @@ impl ToTokens for RequestBuilderSendCode {
                             let make_request = move |continuation: Option<String>| {
                                 let this = self.clone();
                                 async move {
-                                    let mut url = this.url()?;
 
-                                    let rsp = match continuation {
+                                    let mut req = match continuation {
                                         Some(value) => {
+                                            let mut url = this.url()?;
                                             url.set_path("");
                                             url = url.join(&value)?;
-                                            #new_request_code
+                                            // TODO: this needs changing to use proper method
+                                            let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                                            // #new_request_code
                                             #stream_api_version
                                             let req_body = azure_core::EMPTY_BODY;
                                             req.set_body(req_body);
-                                            this.client.send(&mut req).await?
+                                            req
+                                            // this.client.send(&mut req).await?
                                         }
                                         None => {
-                                            #new_request_code
-                                            #request_builder
-                                            req.set_body(req_body);
-                                            this.client.send(&mut req).await?
+                                            // #new_request_code
+                                            // #request_builder
+                                            let mut req = this.prepare_request()?;
+                                            req
+                                            // req.set_body(req_body);
                                         }
                                     };
+                                    let rsp = this.client.send(&mut req).await?;
                                     let rsp =
                                         match rsp.status() {
                                             #match_status
@@ -215,7 +228,7 @@ fn format_path(path: &str) -> String {
     PARAM_RE.replace_all(path, "{}").to_string()
 }
 
-fn get_continuable_param(next_link_name: &str, request_builder: &SetRequestCode) -> Option<String> {
+fn get_continuable_param(next_link_name: &str, request_builder: &PrepareRequestCode) -> Option<String> {
     let next_link_name = next_link_name.to_snake_case();
     let link_name = next_link_name.strip_prefix("next_");
 

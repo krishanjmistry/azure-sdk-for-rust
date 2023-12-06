@@ -4,13 +4,13 @@ mod function_params;
 mod new_request_code;
 mod operation_module;
 mod operations;
+mod prepare_request_code;
 mod request_builder_into_future;
 mod request_builder_send;
 mod request_builder_setter;
 mod request_builder_struct;
 mod response_code;
 mod response_headers;
-mod set_request_code;
 mod set_request_param_code;
 mod web_operation_gen;
 

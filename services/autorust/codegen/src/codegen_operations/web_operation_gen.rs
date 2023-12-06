@@ -1,5 +1,7 @@
+use std::convert::TryFrom;
+
 use crate::Result;
-use autorust_openapi::{Operation, ReferenceOr, Response, StatusCode};
+use autorust_openapi::{MsPageable, Operation, ReferenceOr, Response, StatusCode};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;
 use proc_macro2::Ident;
@@ -138,6 +140,66 @@ impl WebOperationGen {
 #[derive(Clone)]
 pub struct Pageable {
     pub next_link_name: Option<String>,
+}
+
+pub struct OperationNameProvided {
+    pub operation_name: String,
+    pub next_link_name: String,
+    pub item_name: Option<String>,
+}
+
+pub struct OperationNameNotProvided {
+    pub next_link_name: String,
+    pub item_name: Option<String>,
+}
+
+pub struct NullNextLink {
+    pub item_name: Option<String>,
+}
+pub enum PageableCases {
+    /// Case where the operationName is provided, this should call on the operation where its id matches the operationName
+    OperationNameProvided(OperationNameProvided),
+    /// Case where operationName is not provided, this defaults to calling a GET request on the next link url.
+    OperationNameNotProvided(OperationNameNotProvided),
+    /// This doesn't need to be streamed, just specifies that the body contains a list of items - i.e. it's enumerable.
+    NullNextLink(NullNextLink),
+}
+
+impl TryFrom<&MsPageable> for PageableCases {
+    type Error = crate::Error;
+
+    fn try_from(pageable: &MsPageable) -> Result<Self> {
+        match pageable {
+            MsPageable {
+                item_name,
+                next_link_name: None,
+                operation_name: None,
+            } => Ok(Self::NullNextLink(NullNextLink {
+                item_name: item_name.clone(),
+            })),
+            MsPageable {
+                item_name,
+                next_link_name: Some(next_link_name),
+                operation_name: Some(operation_name),
+            } => Ok(Self::OperationNameProvided(OperationNameProvided {
+                operation_name: operation_name.clone(),
+                next_link_name: next_link_name.clone(),
+                item_name: item_name.clone(),
+            })),
+            MsPageable {
+                item_name,
+                next_link_name: Some(next_link_name),
+                operation_name: None,
+            } => Ok(Self::OperationNameNotProvided(OperationNameNotProvided {
+                next_link_name: next_link_name.clone(),
+                item_name: item_name.clone(),
+            })),
+            _ => Err(crate::Error::new(
+                crate::ErrorKind::CodeGen,
+                "Unhandleable case of pageable - likely the spec is invalid",
+            )),
+        }
+    }
 }
 
 /// Creating a function name from the path and verb when an operationId is not specified.
