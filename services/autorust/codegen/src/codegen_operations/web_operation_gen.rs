@@ -110,6 +110,10 @@ impl WebOperationGen {
         })
     }
 
+    pub fn pageable_cases(&self) -> Result<Option<PageableCases>> {
+        self.0.pageable.as_ref().map(|p| PageableCases::try_from(p)).transpose()
+    }
+
     pub fn success_responses(&self) -> IndexMap<&StatusCode, &Response> {
         self.0
             .responses
@@ -142,20 +146,51 @@ pub struct Pageable {
     pub next_link_name: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ItemName {
+    item_name: Option<String>,
+}
+
+impl ItemName {
+    pub fn new(item_name: Option<String>) -> Self {
+        item_name.into()
+    }
+
+    pub fn item_name(&self) -> &str {
+        match self.item_name.as_deref() {
+            Some(item_name) => item_name,
+            None => "value",
+        }
+    }
+}
+
+impl From<Option<String>> for ItemName {
+    fn from(item_name: Option<String>) -> Self {
+        Self { item_name }
+    }
+}
+
+#[derive(Debug, Clone)]
+
 pub struct OperationNameProvided {
     pub operation_name: String,
     pub next_link_name: String,
-    pub item_name: Option<String>,
+    pub item_name: ItemName,
 }
+
+#[derive(Debug, Clone)]
 
 pub struct OperationNameNotProvided {
     pub next_link_name: String,
-    pub item_name: Option<String>,
+    pub item_name: ItemName,
 }
 
+#[derive(Debug, Clone)]
+
 pub struct NullNextLink {
-    pub item_name: Option<String>,
+    pub item_name: ItemName,
 }
+#[derive(Debug, Clone)]
 pub enum PageableCases {
     /// Case where the operationName is provided, this should call on the operation where its id matches the operationName
     OperationNameProvided(OperationNameProvided),
@@ -175,7 +210,7 @@ impl TryFrom<&MsPageable> for PageableCases {
                 next_link_name: None,
                 operation_name: None,
             } => Ok(Self::NullNextLink(NullNextLink {
-                item_name: item_name.clone(),
+                item_name: item_name.clone().into(),
             })),
             MsPageable {
                 item_name,
@@ -184,7 +219,7 @@ impl TryFrom<&MsPageable> for PageableCases {
             } => Ok(Self::OperationNameProvided(OperationNameProvided {
                 operation_name: operation_name.clone(),
                 next_link_name: next_link_name.clone(),
-                item_name: item_name.clone(),
+                item_name: item_name.clone().into(),
             })),
             MsPageable {
                 item_name,
@@ -192,7 +227,7 @@ impl TryFrom<&MsPageable> for PageableCases {
                 operation_name: None,
             } => Ok(Self::OperationNameNotProvided(OperationNameNotProvided {
                 next_link_name: next_link_name.clone(),
-                item_name: item_name.clone(),
+                item_name: item_name.clone().into(),
             })),
             _ => Err(crate::Error::new(
                 crate::ErrorKind::CodeGen,
