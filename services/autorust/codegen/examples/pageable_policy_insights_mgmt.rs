@@ -5,16 +5,17 @@
 use autorust_codegen::{autorust_toml::PackageConfig, *};
 
 fn main() -> Result<()> {
-    let output_folder = "../../../azure-sdk-for-rust/services/mgmt/policyinsights/src/package_2021_10";
+    let output_folder = "../../../azure-sdk-for-rust/services/mgmt/policyinsights/src/package_2023_03";
     let input_files = [
         "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/preview/2018-07-01-preview/policyTrackedResources.json",
         "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2021-10-01/remediations.json",
         "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2019-10-01/policyEvents.json",
         "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2019-10-01/policyStates.json",
-        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2019-10-01/operations.json",
         "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2019-10-01/policyMetadata.json",
-        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2020-07-01/checkPolicyRestrictions.json",
-        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2021-01-01/attestations.json",
+        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2023-03-01/checkPolicyRestrictions.json",
+        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2022-04-01/componentPolicyStates.json",
+        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2022-04-01/operations.json",
+        "../../../azure-rest-api-specs/specification/policyinsights/resource-manager/Microsoft.PolicyInsights/stable/2022-09-01/attestations.json"
         ];
     run(
         &CrateConfig {
