@@ -9,13 +9,13 @@ use crate::{codegen::TypeNameCode, CodeGen};
 use crate::{content_type, Result};
 
 use super::response_headers::{HeaderCode, HeadersCode};
-use super::web_operation_gen::{Pageable, WebOperationGen};
+use super::web_operation_gen::{Pageable, PageableCases, WebOperationGen};
 /// The response for an operation.
 /// An operation may have multiple valid status codes.
 #[derive(Clone)]
 pub struct ResponseCode {
     pub status_responses: Vec<StatusResponseCode>,
-    pub pageable: Option<Pageable>,
+    pub pageable: Option<PageableCases>,
     produces: String,
     headers: HeadersCode,
 }
@@ -52,7 +52,7 @@ impl ResponseCode {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             status_responses,
-            pageable: operation.pageable(),
+            pageable: operation.pageable_cases()?,
             produces,
             headers: HeadersCode::new(headers),
         })

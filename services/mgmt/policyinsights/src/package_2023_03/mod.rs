@@ -80,6 +80,11 @@ impl Client {
         self.scopes.iter().map(String::as_str).collect()
     }
     pub(crate) async fn send(&self, request: &mut azure_core::Request) -> azure_core::Result<azure_core::Response> {
+        let token_response = self.token_credential().get_token(&self.scopes()).await?;
+        request.insert_header(
+            azure_core::headers::AUTHORIZATION,
+            format!("Bearer {}", self.bearer_token().await?.secret()),
+        );
         let context = azure_core::Context::default();
         self.pipeline.send(&context, request).await
     }
@@ -295,18 +300,28 @@ pub mod policy_tracked_resources {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::PolicyTrackedResourcesQueryResults, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -314,26 +329,15 @@ pub mod policy_tracked_resources {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2018-07-01-preview");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -431,18 +435,28 @@ pub mod policy_tracked_resources {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::PolicyTrackedResourcesQueryResults, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -450,26 +464,15 @@ pub mod policy_tracked_resources {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2018-07-01-preview");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -567,18 +570,28 @@ pub mod policy_tracked_resources {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::PolicyTrackedResourcesQueryResults, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -586,26 +599,15 @@ pub mod policy_tracked_resources {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2018-07-01-preview");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -703,18 +705,28 @@ pub mod policy_tracked_resources {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::PolicyTrackedResourcesQueryResults, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -722,26 +734,15 @@ pub mod policy_tracked_resources {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2018-07-01-preview");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -1269,18 +1270,25 @@ pub mod remediations {
                 self.top = Some(top);
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationDeploymentsListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -1288,23 +1296,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -1391,6 +1391,14 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -1399,13 +1407,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -1507,18 +1509,27 @@ pub mod remediations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -1526,25 +1537,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -1630,6 +1631,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -1638,12 +1646,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -1735,6 +1738,14 @@ pub mod remediations {
             pub(crate) parameters: models::Remediation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -1743,13 +1754,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -1840,6 +1845,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -1848,12 +1860,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -1949,18 +1956,25 @@ pub mod remediations {
                 self.top = Some(top);
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationDeploymentsListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -1968,23 +1982,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -2069,6 +2075,14 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2077,13 +2091,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -2183,18 +2191,27 @@ pub mod remediations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -2202,25 +2219,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -2304,6 +2311,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2312,12 +2326,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -2407,6 +2416,14 @@ pub mod remediations {
             pub(crate) parameters: models::Remediation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2415,13 +2432,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -2510,6 +2521,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2518,12 +2536,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -2619,18 +2632,25 @@ pub mod remediations {
                 self.top = Some(top);
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationDeploymentsListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -2638,23 +2658,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -2741,6 +2753,14 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2749,13 +2769,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -2857,18 +2871,27 @@ pub mod remediations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -2876,25 +2899,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -2980,6 +2993,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -2988,12 +3008,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3085,6 +3100,14 @@ pub mod remediations {
             pub(crate) parameters: models::Remediation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3093,13 +3116,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3190,6 +3207,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3198,12 +3222,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3299,18 +3318,25 @@ pub mod remediations {
                 self.top = Some(top);
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationDeploymentsListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -3318,23 +3344,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -3419,6 +3437,14 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3427,13 +3453,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3533,18 +3553,27 @@ pub mod remediations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::RemediationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -3552,25 +3581,15 @@ pub mod remediations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2021-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -3654,6 +3673,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3662,12 +3688,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3757,6 +3778,14 @@ pub mod remediations {
             pub(crate) parameters: models::Remediation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3765,13 +3794,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -3860,6 +3883,13 @@ pub mod remediations {
             pub(crate) remediation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -3868,12 +3898,7 @@ pub mod remediations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -4214,6 +4239,17 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -4222,16 +4258,7 @@ pub mod policy_events {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(skiptoken) = &this.skiptoken {
-                            req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -4368,74 +4395,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -4558,74 +4548,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -4748,74 +4701,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -4944,77 +4860,40 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(expand) = &this.expand {
-                                    req.url_mut().query_pairs_mut().append_pair("$expand", expand);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(expand) = &self.expand {
+                    req.url_mut().query_pairs_mut().append_pair("$expand", expand);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -5138,74 +5017,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core :: Url :: parse (& format ! ("{}/subscriptions/{}/providers/{}/policySetDefinitions/{}/providers/Microsoft.PolicyInsights/policyEvents/{}/queryResults" , self . client . endpoint () , & self . subscription_id , & self . authorization_namespace , & self . policy_set_definition_name , & self . policy_events_resource)) ? ;
@@ -5324,74 +5166,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -5517,74 +5322,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -5711,74 +5479,37 @@ pub mod policy_events {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyEventsQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core :: Url :: parse (& format ! ("{}/subscriptions/{}/resourcegroups/{}/providers/{}/policyAssignments/{}/providers/Microsoft.PolicyInsights/policyEvents/{}/queryResults" , self . client . endpoint () , & self . subscription_id , & self . resource_group_name , & self . authorization_namespace , & self . policy_assignment_name , & self . policy_events_resource)) ? ;
@@ -6321,6 +6052,17 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -6329,16 +6071,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(skiptoken) = &this.skiptoken {
-                            req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -6475,74 +6208,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -6642,6 +6338,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -6650,25 +6366,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -6806,74 +6504,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -6971,6 +6632,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -6979,25 +6660,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -7135,74 +6798,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -7302,6 +6928,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -7310,25 +6956,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -7472,77 +7100,40 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(expand) = &this.expand {
-                                    req.url_mut().query_pairs_mut().append_pair("$expand", expand);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(expand) = &self.expand {
+                    req.url_mut().query_pairs_mut().append_pair("$expand", expand);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -7640,6 +7231,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -7648,25 +7259,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -7748,6 +7341,14 @@ pub mod policy_states {
             pub(crate) subscription_id: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -7756,13 +7357,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -7832,6 +7427,14 @@ pub mod policy_states {
             pub(crate) resource_group_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -7840,13 +7443,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -7973,74 +7570,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core :: Url :: parse (& format ! ("{}/subscriptions/{}/providers/{}/policySetDefinitions/{}/providers/Microsoft.PolicyInsights/policyStates/{}/queryResults" , self . client . endpoint () , & self . subscription_id , & self . authorization_namespace , & self . policy_set_definition_name , & self . policy_states_resource)) ? ;
@@ -8135,6 +7695,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -8143,25 +7723,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -8302,74 +7864,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -8471,6 +7996,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -8479,25 +8024,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -8638,74 +8165,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core::Url::parse(&format!(
@@ -8807,6 +8297,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -8815,25 +8325,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -8975,74 +8467,37 @@ pub mod policy_states {
                 self.skiptoken = Some(skiptoken.into());
                 self
             }
-            pub fn into_stream(self) -> azure_core::Pageable<models::PolicyStatesQueryResults, azure_core::error::Error> {
-                let make_request = move |continuation: Option<String>| {
-                    let this = self.clone();
-                    async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                let has_api_version_already =
-                                    req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                                if !has_api_version_already {
-                                    req.url_mut()
-                                        .query_pairs_mut()
-                                        .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                            None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(orderby) = &this.orderby {
-                                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                                }
-                                if let Some(select) = &this.select {
-                                    req.url_mut().query_pairs_mut().append_pair("$select", select);
-                                }
-                                if let Some(from) = &this.from {
-                                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                                }
-                                if let Some(to) = &this.to {
-                                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                if let Some(apply) = &this.apply {
-                                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                                }
-                                if let Some(skiptoken) = &this.skiptoken {
-                                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
-                            }
-                        };
-                        let rsp = match rsp.status() {
-                            azure_core::StatusCode::Ok => Ok(Response(rsp)),
-                            status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
-                                status: status_code,
-                                error_code: None,
-                            })),
-                        };
-                        rsp?.into_body().await
-                    }
-                };
-                azure_core::Pageable::new(make_request)
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(skiptoken) = &self.skiptoken {
+                    req.url_mut().query_pairs_mut().append_pair("$skiptoken", skiptoken);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
             }
             fn url(&self) -> azure_core::Result<azure_core::Url> {
                 let mut url = azure_core :: Url :: parse (& format ! ("{}/subscriptions/{}/resourcegroups/{}/providers/{}/policyAssignments/{}/providers/Microsoft.PolicyInsights/policyStates/{}/queryResults" , self . client . endpoint () , & self . subscription_id , & self . resource_group_name , & self . authorization_namespace , & self . policy_assignment_name , & self . policy_states_resource)) ? ;
@@ -9138,6 +8593,26 @@ pub mod policy_states {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -9146,25 +8621,7 @@ pub mod policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -9274,6 +8731,13 @@ pub mod policy_metadata {
             pub(crate) resource_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -9282,12 +8746,7 @@ pub mod policy_metadata {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -9379,18 +8838,24 @@ pub mod policy_metadata {
                 self.top = Some(top);
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::PolicyMetadataCollection, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -9398,22 +8863,15 @@ pub mod policy_metadata {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2019-10-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -9560,6 +9018,14 @@ pub mod policy_restrictions {
             pub(crate) parameters: models::CheckRestrictionsRequest,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -9568,13 +9034,7 @@ pub mod policy_restrictions {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -9663,6 +9123,14 @@ pub mod policy_restrictions {
             pub(crate) parameters: models::CheckRestrictionsRequest,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -9671,13 +9139,7 @@ pub mod policy_restrictions {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -9767,6 +9229,14 @@ pub mod policy_restrictions {
             pub(crate) parameters: models::CheckManagementGroupRestrictionsRequest,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -9775,13 +9245,7 @@ pub mod policy_restrictions {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10085,6 +9549,35 @@ pub mod component_policy_states {
                 self.apply = Some(apply.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10093,34 +9586,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10252,6 +9718,35 @@ pub mod component_policy_states {
                 self.apply = Some(apply.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10260,34 +9755,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10425,6 +9893,38 @@ pub mod component_policy_states {
                 self.expand = Some(expand.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                if let Some(expand) = &self.expand {
+                    req.url_mut().query_pairs_mut().append_pair("$expand", expand);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10433,37 +9933,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        if let Some(expand) = &this.expand {
-                            req.url_mut().query_pairs_mut().append_pair("$expand", expand);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10596,6 +10066,35 @@ pub mod component_policy_states {
                 self.apply = Some(apply.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10604,34 +10103,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10759,6 +10231,35 @@ pub mod component_policy_states {
                 self.apply = Some(apply.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10767,34 +10268,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -10923,6 +10397,35 @@ pub mod component_policy_states {
                 self.apply = Some(apply.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Post);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(orderby) = &self.orderby {
+                    req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
+                }
+                if let Some(select) = &self.select {
+                    req.url_mut().query_pairs_mut().append_pair("$select", select);
+                }
+                if let Some(from) = &self.from {
+                    req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
+                }
+                if let Some(to) = &self.to {
+                    req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                if let Some(apply) = &self.apply {
+                    req.url_mut().query_pairs_mut().append_pair("$apply", apply);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -10931,34 +10434,7 @@ pub mod component_policy_states {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Post);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        if let Some(top) = &this.top {
-                            req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                        }
-                        if let Some(orderby) = &this.orderby {
-                            req.url_mut().query_pairs_mut().append_pair("$orderby", orderby);
-                        }
-                        if let Some(select) = &this.select {
-                            req.url_mut().query_pairs_mut().append_pair("$select", select);
-                        }
-                        if let Some(from) = &this.from {
-                            req.url_mut().query_pairs_mut().append_pair("$from", &from.to_string());
-                        }
-                        if let Some(to) = &this.to {
-                            req.url_mut().query_pairs_mut().append_pair("$to", &to.to_string());
-                        }
-                        if let Some(filter) = &this.filter {
-                            req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                        }
-                        if let Some(apply) = &this.apply {
-                            req.url_mut().query_pairs_mut().append_pair("$apply", apply);
-                        }
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.insert_header(azure_core::headers::CONTENT_LENGTH, "0");
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -11054,6 +10530,13 @@ pub mod operations {
             pub(crate) client: super::super::Client,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -11062,12 +10545,7 @@ pub mod operations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -11377,18 +10855,27 @@ pub mod attestations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::AttestationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -11396,25 +10883,15 @@ pub mod attestations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2022-09-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -11498,6 +10975,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -11506,12 +10990,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -11600,6 +11079,14 @@ pub mod attestations {
             pub(crate) parameters: models::Attestation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -11608,13 +11095,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -11726,6 +11207,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -11734,12 +11222,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -11828,18 +11311,27 @@ pub mod attestations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::AttestationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -11847,25 +11339,15 @@ pub mod attestations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2022-09-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -11951,6 +11433,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -11959,12 +11448,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -12055,6 +11539,14 @@ pub mod attestations {
             pub(crate) parameters: models::Attestation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -12063,13 +11555,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -12183,6 +11669,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -12191,12 +11684,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -12285,18 +11773,27 @@ pub mod attestations {
                 self.filter = Some(filter.into());
                 self
             }
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                if let Some(top) = &self.top {
+                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
+                }
+                if let Some(filter) = &self.filter {
+                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
+                }
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             pub fn into_stream(self) -> azure_core::Pageable<models::AttestationListResult, azure_core::error::Error> {
                 let make_request = move |continuation: Option<String>| {
                     let this = self.clone();
                     async move {
-                        let mut url = this.url()?;
-                        let rsp = match continuation {
-                            Some(value) => {
-                                url.set_path("");
-                                url = url.join(&value)?;
+                        let mut req = match continuation {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
                                 let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
                                 let has_api_version_already =
                                     req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
                                 if !has_api_version_already {
@@ -12304,25 +11801,15 @@ pub mod attestations {
                                         .query_pairs_mut()
                                         .append_pair(azure_core::query_param::API_VERSION, "2022-09-01");
                                 }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
                             }
                             None => {
-                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                let bearer_token = this.client.bearer_token().await?;
-                                req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                                if let Some(top) = &this.top {
-                                    req.url_mut().query_pairs_mut().append_pair("$top", &top.to_string());
-                                }
-                                if let Some(filter) = &this.filter {
-                                    req.url_mut().query_pairs_mut().append_pair("$filter", filter);
-                                }
-                                let req_body = azure_core::EMPTY_BODY;
-                                req.set_body(req_body);
-                                this.client.send(&mut req).await?
+                                let mut req = this.prepare_request()?;
+                                req
                             }
                         };
+                        let rsp = this.client.send(&mut req).await?;
                         let rsp = match rsp.status() {
                             azure_core::StatusCode::Ok => Ok(Response(rsp)),
                             status_code => Err(azure_core::error::Error::from(azure_core::error::ErrorKind::HttpResponse {
@@ -12406,6 +11893,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -12414,12 +11908,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -12508,6 +11997,14 @@ pub mod attestations {
             pub(crate) parameters: models::Attestation,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Put);
+                req.insert_header("content-type", "application/json");
+                let req_body = azure_core::to_json(&self.parameters)?;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -12516,13 +12013,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Put);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        req.insert_header("content-type", "application/json");
-                        let req_body = azure_core::to_json(&this.parameters)?;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -12634,6 +12125,13 @@ pub mod attestations {
             pub(crate) attestation_name: String,
         }
         impl RequestBuilder {
+            pub fn prepare_request(&self) -> azure_core::Result<azure_core::Request> {
+                let url = self.url()?;
+                let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
+                let req_body = azure_core::EMPTY_BODY;
+                req.set_body(req_body);
+                Ok(req)
+            }
             #[doc = "Returns a future that sends the request and returns a [`Response`] object that provides low-level access to full response details."]
             #[doc = ""]
             #[doc = "You should typically use `.await` (which implicitly calls `IntoFuture::into_future()`) to finalize and send requests rather than `send()`."]
@@ -12642,12 +12140,7 @@ pub mod attestations {
                 Box::pin({
                     let this = self.clone();
                     async move {
-                        let url = this.url()?;
-                        let mut req = azure_core::Request::new(url, azure_core::Method::Delete);
-                        let bearer_token = this.client.bearer_token().await?;
-                        req.insert_header(azure_core::headers::AUTHORIZATION, format!("Bearer {}", bearer_token.secret()));
-                        let req_body = azure_core::EMPTY_BODY;
-                        req.set_body(req_body);
+                        let mut req = this.prepare_request()?;
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })

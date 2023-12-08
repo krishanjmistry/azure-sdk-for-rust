@@ -6,6 +6,7 @@ use crate::codegen::PARAM_RE;
 use crate::Result;
 use crate::{codegen::parse_path_params, identifier::SnakeCaseIdent};
 
+use super::web_operation_gen::PageableCases;
 use super::{
     prepare_request_code::PrepareRequestCode,
     // new_request_code::NewRequestCode,
@@ -102,64 +103,47 @@ impl ToTokens for RequestBuilderSendCode {
             }
         };
 
-        let fut = if let Some(pageable) = &self.response_code.pageable {
-            // TODO: Pageable requires the values to be part of the response schema,
-            // however, some schemas do this via the header x-ms-continuation rather than
-            // provide a next_link_name.  For now, those cases get documented that we don't
-            // poll and move on.
-            if let Some(next_link_name) = pageable.next_link_name.as_ref() {
-                let mut stream_api_version = quote! {};
-
-                // per discussion in SDK meeting, we should always set the
-                // api-version on the request if we have a version.
-                if request_builder.has_param_api_version {
-                    let api_version = &request_builder.api_version;
-                    stream_api_version.extend(quote! {
-                        let has_api_version_already = req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
-                        if !has_api_version_already {
-                            req.url_mut().query_pairs_mut().append_pair(azure_core::query_param::API_VERSION, #api_version);
-                        }
-                    });
-                }
-
-                if request_builder.has_param_x_ms_version {
-                    let api_version = &request_builder.api_version;
-                    stream_api_version.extend(quote! {
-                        req.insert_header(azure_core::headers::VERSION, #api_version);
-                    });
-                }
-                let response_type = self.response_code.response_type().expect("pageable response has a body");
-
-                // some of the pageable requests specify the continuation token
-                // as a parameter.  In this case, use the basic request builder,
-                // but insert the continuation parameter
-                if let Some(continuable_param) = get_continuable_param(next_link_name, request_builder) {
+        let x = if let Some(pageable_cases) = &self.response_code.pageable {
+            match pageable_cases {
+                PageableCases::NullNextLink(null_next_link) => {
+                    // In this case, the result is not actually pageable, but it the response contains an enumerable item.
+                    let item_name = null_next_link.item_name.item_name();
+                    let doc_string =
+                        format!("The response provided contains an enumerable result which can be accessed via: `{item_name}`");
                     quote! {
-                        pub fn into_stream(self) -> azure_core::Pageable<#response_type, azure_core::error::Error> {
-                            let make_request = move |continuation: Option<String>| {
-                                let this = self.clone();
-                                async move {
-                                    let mut req = this.prepare_request()?;
-                                    // let mut url = this.url()?;
-                                    // #new_request_code
-                                    // #request_builder
-                                    if let Some(value) = continuation.as_ref() {
-                                        req.url_mut().query_pairs_mut().append_pair(#continuable_param, value);
-                                    }
-                                    // req.set_body(req_body);
-                                    let rsp = this.client.send(&mut req).await?;
-                                    let rsp =
-                                        match rsp.status() {
-                                            #match_status
-                                        };
-                                    rsp?.into_body().await
-                                }
-                            };
-
-                            azure_core::Pageable::new(make_request)
-                        }
+                        #[doc = #doc_string]
+                        #[doc = ""]
+                        #send_future
                     }
-                } else {
+                }
+                PageableCases::OperationNameProvided(operation_name_provided) => {
+                    // In this case, the result is pageable, and the operation name is provided meaning we should call out to that operation
+                    quote! {}
+                }
+                PageableCases::OperationNameNotProvided(operation_name_not_provided) => {
+                    // In this case, the result is pageable, but the operation name is not provided meaning we should call out to the next link url using a GET request
+                    let mut stream_api_version = quote! {};
+
+                    // per discussion in SDK meeting, we should always set the
+                    // api-version on the request if we have a version.
+                    if request_builder.has_param_api_version {
+                        let api_version = &request_builder.api_version;
+                        stream_api_version.extend(quote! {
+                            let has_api_version_already = req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
+                            if !has_api_version_already {
+                                req.url_mut().query_pairs_mut().append_pair(azure_core::query_param::API_VERSION, #api_version);
+                            }
+                        });
+                    }
+
+                    if request_builder.has_param_x_ms_version {
+                        let api_version = &request_builder.api_version;
+                        stream_api_version.extend(quote! {
+                            req.insert_header(azure_core::headers::VERSION, #api_version);
+                        });
+                    }
+                    let response_type = self.response_code.response_type().expect("pageable response has a body");
+
                     quote! {
                         pub fn into_stream(self) -> azure_core::Pageable<#response_type, azure_core::error::Error> {
                             let make_request = move |continuation: Option<String>| {
@@ -167,25 +151,15 @@ impl ToTokens for RequestBuilderSendCode {
                                 async move {
 
                                     let mut req = match continuation {
-                                        Some(value) => {
-                                            let mut url = this.url()?;
-                                            url.set_path("");
-                                            url = url.join(&value)?;
-                                            // TODO: this needs changing to use proper method
+                                        Some(next_link_url) => {
+                                            let mut url = azure_core::Url::parse(&next_link_url)?;
                                             let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                            // #new_request_code
                                             #stream_api_version
-                                            let req_body = azure_core::EMPTY_BODY;
-                                            req.set_body(req_body);
-                                            req
-                                            // this.client.send(&mut req).await?
-                                        }
+                                            req.set_body(azure_core::EMPTY_BODY);
+                                            req                                        }
                                         None => {
-                                            // #new_request_code
-                                            // #request_builder
                                             let mut req = this.prepare_request()?;
                                             req
-                                            // req.set_body(req_body);
                                         }
                                     };
                                     let rsp = this.client.send(&mut req).await?;
@@ -201,25 +175,130 @@ impl ToTokens for RequestBuilderSendCode {
                         }
                     }
                 }
-            } else {
-                // most often when this happens, the continuation token is provided
-                // by an HTTP Header x-ms-continuation, which should be extracted
-                // from the response.
-                //
-                // Note, this is only *sometimes* this is specified in the spec.
-                //
-                // Ref: https://github.com/Azure/azure-sdk-for-rust/issues/446
-                let mut fut = quote! {
-                    #[doc = "Only the first response will be fetched as the continuation token is not part of the response schema"]
-                    #[doc = ""]
-                };
-                fut.extend(send_future);
-                fut
             }
         } else {
             send_future
         };
-        tokens.extend(fut);
+
+        // let fut = if let Some(pageable) = &self.response_code.pageable {
+        //     // TODO: Pageable requires the values to be part of the response schema,
+        //     // however, some schemas do this via the header x-ms-continuation rather than
+        //     // provide a next_link_name.  For now, those cases get documented that we don't
+        //     // poll and move on.
+        //     if let Some(next_link_name) = pageable.next_link_name.as_ref() {
+        //         let mut stream_api_version = quote! {};
+
+        //         // per discussion in SDK meeting, we should always set the
+        //         // api-version on the request if we have a version.
+        //         if request_builder.has_param_api_version {
+        //             let api_version = &request_builder.api_version;
+        //             stream_api_version.extend(quote! {
+        //                 let has_api_version_already = req.url_mut().query_pairs().any(|(k, _)| k == azure_core::query_param::API_VERSION);
+        //                 if !has_api_version_already {
+        //                     req.url_mut().query_pairs_mut().append_pair(azure_core::query_param::API_VERSION, #api_version);
+        //                 }
+        //             });
+        //         }
+
+        //         if request_builder.has_param_x_ms_version {
+        //             let api_version = &request_builder.api_version;
+        //             stream_api_version.extend(quote! {
+        //                 req.insert_header(azure_core::headers::VERSION, #api_version);
+        //             });
+        //         }
+        //         let response_type = self.response_code.response_type().expect("pageable response has a body");
+
+        //         // some of the pageable requests specify the continuation token
+        //         // as a parameter.  In this case, use the basic request builder,
+        //         // but insert the continuation parameter
+        //         if let Some(continuable_param) = get_continuable_param(next_link_name, request_builder) {
+        //             quote! {
+        //                 pub fn into_stream(self) -> azure_core::Pageable<#response_type, azure_core::error::Error> {
+        //                     let make_request = move |continuation: Option<String>| {
+        //                         let this = self.clone();
+        //                         async move {
+        //                             let mut req = this.prepare_request()?;
+        //                             // let mut url = this.url()?;
+        //                             // #new_request_code
+        //                             // #request_builder
+        //                             if let Some(value) = continuation.as_ref() {
+        //                                 req.url_mut().query_pairs_mut().append_pair(#continuable_param, value);
+        //                             }
+        //                             // req.set_body(req_body);
+        //                             let rsp = this.client.send(&mut req).await?;
+        //                             let rsp =
+        //                                 match rsp.status() {
+        //                                     #match_status
+        //                                 };
+        //                             rsp?.into_body().await
+        //                         }
+        //                     };
+
+        //                     azure_core::Pageable::new(make_request)
+        //                 }
+        //             }
+        //         } else {
+        //             quote! {
+        //                 pub fn into_stream(self) -> azure_core::Pageable<#response_type, azure_core::error::Error> {
+        //                     let make_request = move |continuation: Option<String>| {
+        //                         let this = self.clone();
+        //                         async move {
+
+        //                             let mut req = match continuation {
+        //                                 Some(value) => {
+        //                                     let mut url = this.url()?;
+        //                                     url.set_path("");
+        //                                     url = url.join(&value)?;
+        //                                     // TODO: this needs changing to use proper method
+        //                                     let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+        //                                     // #new_request_code
+        //                                     #stream_api_version
+        //                                     let req_body = azure_core::EMPTY_BODY;
+        //                                     req.set_body(req_body);
+        //                                     req
+        //                                     // this.client.send(&mut req).await?
+        //                                 }
+        //                                 None => {
+        //                                     // #new_request_code
+        //                                     // #request_builder
+        //                                     let mut req = this.prepare_request()?;
+        //                                     req
+        //                                     // req.set_body(req_body);
+        //                                 }
+        //                             };
+        //                             let rsp = this.client.send(&mut req).await?;
+        //                             let rsp =
+        //                                 match rsp.status() {
+        //                                     #match_status
+        //                                 };
+        //                             rsp?.into_body().await
+        //                         }
+        //                     };
+
+        //                     azure_core::Pageable::new(make_request)
+        //                 }
+        //             }
+        //         }
+        //     } else {
+        //         // most often when this happens, the continuation token is provided
+        //         // by an HTTP Header x-ms-continuation, which should be extracted
+        //         // from the response.
+        //         //
+        //         // Note, this is only *sometimes* this is specified in the spec.
+        //         //
+        //         // Ref: https://github.com/Azure/azure-sdk-for-rust/issues/446
+        //         let mut fut = quote! {
+        //             #[doc = "Only the first response will be fetched as the continuation token is not part of the response schema"]
+        //             #[doc = ""]
+        //         };
+        //         fut.extend(send_future);
+        //         fut
+        //     }
+        // } else {
+        //     send_future
+        // };
+        tokens.extend(x);
+        // tokens.extend(fut);
         tokens.extend(urlfn)
     }
 }
