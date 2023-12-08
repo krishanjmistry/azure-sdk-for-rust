@@ -119,10 +119,10 @@ pub fn create_client(modules: &[String], endpoint: Option<&str>) -> Result<Token
                 self.scopes.iter().map(String::as_str).collect()
             }
             pub(crate) async fn send(&self, request: &mut azure_core::Request) -> azure_core::Result<azure_core::Response> {
-                let token_response = self.token_credential().get_token(&self.scopes().join(" ")).await?;
+                let token_response = self.token_credential().get_token(&self.scopes()).await?;
                 request.insert_header(
                     azure_core::headers::AUTHORIZATION,
-                    format!("Bearer {}", token_response.token.secret()),
+                    format!("Bearer {}", self.bearer_token().await?.secret()),
                 );
                 let context = azure_core::Context::default();
                 self.pipeline.send(&context, request).await
