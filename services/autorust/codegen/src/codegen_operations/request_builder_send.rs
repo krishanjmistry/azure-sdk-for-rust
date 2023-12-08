@@ -7,14 +7,9 @@ use crate::Result;
 use crate::{codegen::parse_path_params, identifier::SnakeCaseIdent};
 
 use super::web_operation_gen::PageableCases;
-use super::{
-    prepare_request_code::PrepareRequestCode,
-    // new_request_code::NewRequestCode,
-    response_code::ResponseCode,
-};
+use super::{prepare_request_code::PrepareRequestCode, response_code::ResponseCode};
 /// The `send` function of the request builder.
 pub struct RequestBuilderSendCode {
-    // new_request_code: NewRequestCode,
     path_params: String,
     request_builder: PrepareRequestCode,
     response_code: ResponseCode,
@@ -23,7 +18,6 @@ pub struct RequestBuilderSendCode {
 
 impl RequestBuilderSendCode {
     pub fn new(path_params: String, request_builder: PrepareRequestCode, response_code: ResponseCode) -> Result<Self> {
-        // pub fn new(new_request_code: NewRequestCode, request_builder: PrepareRequestCode, response_code: ResponseCode) -> Result<Self> {
         let params = parse_path_params(&path_params);
         let url_args: Result<Vec<_>> = params.iter().map(|s| s.to_snake_case_ident()).collect();
         let url_args = url_args?;
@@ -93,10 +87,6 @@ impl ToTokens for RequestBuilderSendCode {
                     let this = self.clone();
                     async move {
                         let mut req = this.prepare_request()?;
-                        // let url = this.url()?;
-                        // #new_request_code
-                        // #request_builder
-                        // req.set_body(req_body);
                         Ok(Response(this.client.send(&mut req).await?))
                     }
                 })
@@ -105,22 +95,19 @@ impl ToTokens for RequestBuilderSendCode {
 
         let x = if let Some(pageable_cases) = &self.response_code.pageable {
             match pageable_cases {
-                PageableCases::NullNextLink(null_next_link) => {
+                PageableCases::Enumerable(item_name) => {
                     // In this case, the result is not actually pageable, but it the response contains an enumerable item.
-                    let item_name = null_next_link.item_name.item_name();
-                    let doc_string =
-                        format!("The response provided contains an enumerable result which can be accessed via: `{item_name}`");
+                    let doc_string = format!(
+                        "The response provided contains an enumerable result which can be accessed via: `{}`",
+                        item_name.item_name()
+                    );
                     quote! {
                         #[doc = #doc_string]
                         #[doc = ""]
                         #send_future
                     }
                 }
-                PageableCases::OperationNameProvided(operation_name_provided) => {
-                    // In this case, the result is pageable, and the operation name is provided meaning we should call out to that operation
-                    quote! {}
-                }
-                PageableCases::OperationNameNotProvided(operation_name_not_provided) => {
+                PageableCases::Pageable(pageable_properties) => {
                     // In this case, the result is pageable, but the operation name is not provided meaning we should call out to the next link url using a GET request
                     let mut stream_api_version = quote! {};
 
@@ -142,6 +129,27 @@ impl ToTokens for RequestBuilderSendCode {
                             req.insert_header(azure_core::headers::VERSION, #api_version);
                         });
                     }
+
+                    // The operation we stream on depends on whether an operation name is provided
+                    let next_link_request = match &pageable_properties.operation_name {
+                        // When an operation name is provided in the spec, we should create a request using that operation
+                        Some(_operation_name) => {
+                            // handle some logic here
+                            panic!("unhandled case");
+                            quote! {}
+                        }
+                        // When no operation name is provided, we should call out to the next link url using a GET request
+                        None => quote! {
+                            Some(next_link_url) => {
+                                let mut url = azure_core::Url::parse(&next_link_url)?;
+                                let mut req = azure_core::Request::new(url, azure_core::Method::Get);
+                                #stream_api_version
+                                req.set_body(azure_core::EMPTY_BODY);
+                                req
+                            }
+                        },
+                    };
+
                     let response_type = self.response_code.response_type().expect("pageable response has a body");
 
                     quote! {
@@ -149,14 +157,8 @@ impl ToTokens for RequestBuilderSendCode {
                             let make_request = move |continuation: Option<String>| {
                                 let this = self.clone();
                                 async move {
-
                                     let mut req = match continuation {
-                                        Some(next_link_url) => {
-                                            let mut url = azure_core::Url::parse(&next_link_url)?;
-                                            let mut req = azure_core::Request::new(url, azure_core::Method::Get);
-                                            #stream_api_version
-                                            req.set_body(azure_core::EMPTY_BODY);
-                                            req                                        }
+                                        #next_link_request
                                         None => {
                                             let mut req = this.prepare_request()?;
                                             req
@@ -170,7 +172,6 @@ impl ToTokens for RequestBuilderSendCode {
                                     rsp?.into_body().await
                                 }
                             };
-
                             azure_core::Pageable::new(make_request)
                         }
                     }

@@ -147,15 +147,11 @@ pub struct Pageable {
 }
 
 #[derive(Debug, Clone)]
-pub struct ItemName {
+pub struct EnumerableItem {
     item_name: Option<String>,
 }
 
-impl ItemName {
-    pub fn new(item_name: Option<String>) -> Self {
-        item_name.into()
-    }
-
+impl EnumerableItem {
     pub fn item_name(&self) -> &str {
         match self.item_name.as_deref() {
             Some(item_name) => item_name,
@@ -164,40 +160,27 @@ impl ItemName {
     }
 }
 
-impl From<Option<String>> for ItemName {
+impl From<Option<String>> for EnumerableItem {
     fn from(item_name: Option<String>) -> Self {
         Self { item_name }
     }
 }
 
 #[derive(Debug, Clone)]
-
-pub struct OperationNameProvided {
-    pub operation_name: String,
+pub struct PageableProperties {
+    pub operation_name: Option<String>,
     pub next_link_name: String,
-    pub item_name: ItemName,
+    pub enumerable_item: EnumerableItem,
 }
 
-#[derive(Debug, Clone)]
-
-pub struct OperationNameNotProvided {
-    pub next_link_name: String,
-    pub item_name: ItemName,
-}
-
-#[derive(Debug, Clone)]
-
-pub struct NullNextLink {
-    pub item_name: ItemName,
-}
 #[derive(Debug, Clone)]
 pub enum PageableCases {
-    /// Case where the operationName is provided, this should call on the operation where its id matches the operationName
-    OperationNameProvided(OperationNameProvided),
-    /// Case where operationName is not provided, this defaults to calling a GET request on the next link url.
-    OperationNameNotProvided(OperationNameNotProvided),
+    /// Cases where the next link name is provided, the item name refers to the name of the array of items in the response body.
+    /// - if operationName is provided, this should call on the operation where its id matches the operationName
+    /// - if operationName is not provided, this should call a GET request on the next link url.
+    Pageable(PageableProperties),
     /// This doesn't need to be streamed, just specifies that the body contains a list of items - i.e. it's enumerable.
-    NullNextLink(NullNextLink),
+    Enumerable(EnumerableItem),
 }
 
 impl TryFrom<&MsPageable> for PageableCases {
@@ -209,29 +192,21 @@ impl TryFrom<&MsPageable> for PageableCases {
                 item_name,
                 next_link_name: None,
                 operation_name: None,
-            } => Ok(Self::NullNextLink(NullNextLink {
+            } => Ok(Self::Enumerable(EnumerableItem {
                 item_name: item_name.clone().into(),
             })),
             MsPageable {
                 item_name,
                 next_link_name: Some(next_link_name),
-                operation_name: Some(operation_name),
-            } => Ok(Self::OperationNameProvided(OperationNameProvided {
+                operation_name,
+            } => Ok(Self::Pageable(PageableProperties {
                 operation_name: operation_name.clone(),
                 next_link_name: next_link_name.clone(),
-                item_name: item_name.clone().into(),
-            })),
-            MsPageable {
-                item_name,
-                next_link_name: Some(next_link_name),
-                operation_name: None,
-            } => Ok(Self::OperationNameNotProvided(OperationNameNotProvided {
-                next_link_name: next_link_name.clone(),
-                item_name: item_name.clone().into(),
+                enumerable_item: item_name.clone().into(),
             })),
             _ => Err(crate::Error::new(
                 crate::ErrorKind::CodeGen,
-                "Unhandleable case of pageable - likely the spec is invalid",
+                "Unhandleable case of `x-ms-pageable` - likely the spec is invalid",
             )),
         }
     }

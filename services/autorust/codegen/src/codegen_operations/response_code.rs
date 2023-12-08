@@ -9,7 +9,7 @@ use crate::{codegen::TypeNameCode, CodeGen};
 use crate::{content_type, Result};
 
 use super::response_headers::{HeaderCode, HeadersCode};
-use super::web_operation_gen::{Pageable, PageableCases, WebOperationGen};
+use super::web_operation_gen::{PageableCases, WebOperationGen};
 /// The response for an operation.
 /// An operation may have multiple valid status codes.
 #[derive(Clone)]
