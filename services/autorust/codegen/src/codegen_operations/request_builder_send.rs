@@ -134,9 +134,12 @@ impl ToTokens for RequestBuilderSendCode {
                     let next_link_request = match &pageable_properties.operation_name {
                         // When an operation name is provided in the spec, we should create a request using that operation
                         Some(_operation_name) => {
-                            // handle some logic here
-                            panic!("unhandled case");
-                            quote! {}
+                            // create a request using the request builder of the operation name
+                            quote! {
+                                Some(continuation) => {
+                                    panic!("This operation is pageable, but the implementation is incomplete")
+                                }
+                            }
                         }
                         // When no operation name is provided, we should call out to the next link url using a GET request
                         None => quote! {
